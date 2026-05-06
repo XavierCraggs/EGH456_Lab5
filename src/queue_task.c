@@ -142,7 +142,28 @@ static void writerTask( void *pvParameters )
                                   ( void * ) &xMsgObj,
                                   mainQUEUE_SEND_TICKS_TO_WAIT );
 
-        ( void ) xSendStatus;
+        
+        if( pxConfig->id == 0xA0U )
+        {
+            uxWaiting = uxQueueMessagesWaiting( xQueue );
+
+            if( xSendStatus == pdPASS )
+            {
+                UARTprintf( "[W id=0x%02x seq=%u] SENT OK  | queue=%u/%u\r\n",
+                            pxConfig->id,
+                            (unsigned int)xMsgObj.seq,
+                            (unsigned int)uxWaiting,
+                            (unsigned int)mainQUEUE_LENGTH );
+            }
+            else
+            {
+                UARTprintf( "[W id=0x%02x seq=%u] FAILED   | queue=%u/%u (FULL)\r\n",
+                            pxConfig->id,
+                            (unsigned int)xMsgObj.seq,
+                            (unsigned int)uxWaiting,
+                            (unsigned int)mainQUEUE_LENGTH );
+            }
+        }
 
         ptrMsgObj = &xMsgObj;
 
@@ -159,7 +180,7 @@ static void writerTask( void *pvParameters )
 static void readerTask( void *pvParameters )
 {
     struct MsgObj xReadMsgObj;
-
+    UBaseType_t uxWaiting;
     ( void ) pvParameters;
 
     for( ;; )
@@ -168,11 +189,15 @@ static void readerTask( void *pvParameters )
                            ( void * ) &xReadMsgObj,
                            mainQUEUE_RECEIVE_TICKS_TO_WAIT ) == pdPASS )
         {
-            UARTprintf( "RX xQueue id=0x%02x val=%u seq=%u tick=%u\r\n",
+            uxWaiting = uxQueueMessagesWaiting( xQueue );
+
+            UARTprintf( "RX xQueue id=0x%02x val=%u seq=%u tick=%u | queue=%u/%u\r\n",
                         ( unsigned int ) xReadMsgObj.id,
                         ( unsigned int ) xReadMsgObj.val,
                         ( unsigned int ) xReadMsgObj.seq,
-                        ( unsigned int ) xReadMsgObj.tick );
+                        ( unsigned int ) xReadMsgObj.tick,
+                        ( unsigned int ) uxWaiting,
+                        ( unsigned int ) mainQUEUE_LENGTH );
         }
 
         if( mainRECEIVER_DELAY_MS > 0U )
