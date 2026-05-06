@@ -24,14 +24,14 @@
 /*-----------------------------------------------------------*/
 /* Task and queue settings for Task A. */
 
-#define mainQUEUE_LENGTH                    ( 4U )
-#define mainQUEUE_SEND_TICKS_TO_WAIT        ( ( TickType_t ) 0U )
-#define mainQUEUE_RECEIVE_TICKS_TO_WAIT     ( ( TickType_t ) 10U )
+#define mainQUEUE_LENGTH (1U)
+#define mainQUEUE_SEND_TICKS_TO_WAIT ((TickType_t)0U)
+#define mainQUEUE_RECEIVE_TICKS_TO_WAIT ((TickType_t)10U)
 
-#define mainRECEIVER_DELAY_MS               ( 0U )
+#define mainRECEIVER_DELAY_MS (0U)
 
-#define mainQUEUE_SEND_TASK_PRIORITY        ( tskIDLE_PRIORITY + 1U )
-#define mainQUEUE_RECEIVE_TASK_PRIORITY     ( tskIDLE_PRIORITY + 2U )
+#define mainQUEUE_SEND_TASK_PRIORITY (tskIDLE_PRIORITY + 1U)
+#define mainQUEUE_RECEIVE_TASK_PRIORITY (tskIDLE_PRIORITY + 1U)
 
 /*-----------------------------------------------------------*/
 /* Message object used by the queue examples. */
@@ -59,177 +59,180 @@ static QueueHandle_t xPointerQueue = NULL;
 
 /* Four writer task configurations. */
 static const struct MsgWriterConfig xWriterConfig[] =
-{
-    { 0xA0U, 1U, 20U },
-    { 0xA1U, 2U, 30U },
-    { 0xA2U, 3U, 50U },
-    { 0xA3U, 4U, 80U }
-};
+    {
+        {0xA0U, 1U, 20U},
+        {0xA1U, 2U, 30U},
+        {0xA2U, 3U, 50U},
+        {0xA3U, 4U, 80U}};
 
 /*-----------------------------------------------------------*/
 /* Task prototypes. */
 
-static void writerTask( void *pvParameters );
-static void readerTask( void *pvParameters );
-static void pointerReaderTask( void *pvParameters );
+static void writerTask(void *pvParameters);
+static void readerTask(void *pvParameters);
+static void pointerReaderTask(void *pvParameters);
 
 /*-----------------------------------------------------------*/
 
-void vcreateQueueTasks( void )
+void vcreateQueueTasks(void)
 {
     uint32_t i;
 
-    xQueue = xQueueCreate( mainQUEUE_LENGTH,
-                           sizeof( struct MsgObj ) );
+    xQueue = xQueueCreate(mainQUEUE_LENGTH,
+                          sizeof(struct MsgObj));
 
-    xPointerQueue = xQueueCreate( mainQUEUE_LENGTH,
-                                  sizeof( struct MsgObj * ) );
+    xPointerQueue = xQueueCreate(mainQUEUE_LENGTH,
+                                 sizeof(struct MsgObj *));
 
-    if( ( xQueue == NULL ) || ( xPointerQueue == NULL ) )
+    if ((xQueue == NULL) || (xPointerQueue == NULL))
     {
-        UARTprintf( "Queue creation failed\r\n" );
+        UARTprintf("Queue creation failed\r\n");
         return;
     }
 
-    xTaskCreate( readerTask,
-                 "readerTask",
-                 configMINIMAL_STACK_SIZE,
-                 NULL,
-                 mainQUEUE_RECEIVE_TASK_PRIORITY,
-                 NULL );
+    xTaskCreate(readerTask,
+                "readerTask",
+                configMINIMAL_STACK_SIZE,
+                NULL,
+                mainQUEUE_RECEIVE_TASK_PRIORITY,
+                NULL);
 
-    xTaskCreate( pointerReaderTask,
-                 "ptrReaderTask",
-                 configMINIMAL_STACK_SIZE,
-                 NULL,
-                 mainQUEUE_RECEIVE_TASK_PRIORITY,
-                 NULL );
+    xTaskCreate(pointerReaderTask,
+                "ptrReaderTask",
+                configMINIMAL_STACK_SIZE,
+                NULL,
+                mainQUEUE_RECEIVE_TASK_PRIORITY,
+                NULL);
 
-    for( i = 0U; i < ( sizeof( xWriterConfig ) / sizeof( xWriterConfig[ 0 ] ) ); i++ )
+    for (i = 0U; i < (sizeof(xWriterConfig) / sizeof(xWriterConfig[0])); i++)
     {
-        xTaskCreate( writerTask,
-                     "writerTask",
-                     configMINIMAL_STACK_SIZE,
-                     ( void * ) &( xWriterConfig[ i ] ),
-                     mainQUEUE_SEND_TASK_PRIORITY,
-                     NULL );
+        xTaskCreate(writerTask,
+                    "writerTask",
+                    configMINIMAL_STACK_SIZE,
+                    (void *)&(xWriterConfig[i]),
+                    mainQUEUE_SEND_TASK_PRIORITY,
+                    NULL);
     }
 }
 
 /*-----------------------------------------------------------*/
 
-static void writerTask( void *pvParameters )
+static void writerTask(void *pvParameters)
 {
     const struct MsgWriterConfig *pxConfig;
     struct MsgObj xMsgObj;
     struct MsgObj *ptrMsgObj;
     BaseType_t xSendStatus;
+    UBaseType_t uxWaiting;
 
-    pxConfig = ( const struct MsgWriterConfig * ) pvParameters;
+    pxConfig = (const struct MsgWriterConfig *)pvParameters;
 
     xMsgObj.id = pxConfig->id;
     xMsgObj.val = 0U;
     xMsgObj.seq = 0U;
     xMsgObj.tick = 0U;
 
-    for( ;; )
+    for (;;)
     {
         xMsgObj.seq++;
-        xMsgObj.val = ( uint8_t ) ( xMsgObj.val + pxConfig->step );
+        xMsgObj.val = (uint8_t)(xMsgObj.val + pxConfig->step);
         xMsgObj.tick = xTaskGetTickCount();
 
-        xSendStatus = xQueueSend( xQueue,
-                                  ( void * ) &xMsgObj,
-                                  mainQUEUE_SEND_TICKS_TO_WAIT );
+        xSendStatus = xQueueSend(xQueue,
+                                 (void *)&xMsgObj,
+                                 mainQUEUE_SEND_TICKS_TO_WAIT);
 
-        
-        if( pxConfig->id == 0xA0U )
+        if (pxConfig->id == 0xA0U)
         {
-            uxWaiting = uxQueueMessagesWaiting( xQueue );
+            uxWaiting = uxQueueMessagesWaiting(xQueue);
 
-            if( xSendStatus == pdPASS )
+            if (xSendStatus == pdPASS)
             {
-                UARTprintf( "[W id=0x%02x seq=%u] SENT OK  | queue=%u/%u\r\n",
-                            pxConfig->id,
-                            (unsigned int)xMsgObj.seq,
-                            (unsigned int)uxWaiting,
-                            (unsigned int)mainQUEUE_LENGTH );
+                UARTprintf("[W id=0x%02x seq=%u] SENT OK  | queue=%u/%u\r\n",
+                           pxConfig->id,
+                           (unsigned int)xMsgObj.seq,
+                           (unsigned int)uxWaiting,
+                           (unsigned int)mainQUEUE_LENGTH);
             }
             else
             {
-                UARTprintf( "[W id=0x%02x seq=%u] FAILED   | queue=%u/%u (FULL)\r\n",
-                            pxConfig->id,
-                            (unsigned int)xMsgObj.seq,
-                            (unsigned int)uxWaiting,
-                            (unsigned int)mainQUEUE_LENGTH );
+                UARTprintf("[W id=0x%02x seq=%u] FAILED   | queue=%u/%u (FULL)\r\n",
+                           pxConfig->id,
+                           (unsigned int)xMsgObj.seq,
+                           (unsigned int)uxWaiting,
+                           (unsigned int)mainQUEUE_LENGTH);
             }
         }
 
         ptrMsgObj = &xMsgObj;
 
-        xQueueSend( xPointerQueue,
-                    ( void * ) &ptrMsgObj,
-                    mainQUEUE_SEND_TICKS_TO_WAIT );
+        // xQueueSend( xPointerQueue,
+        //             ( void * ) &ptrMsgObj,
+        //             mainQUEUE_SEND_TICKS_TO_WAIT );
 
-        vTaskDelay( pdMS_TO_TICKS( pxConfig->delayMs ) );
+        vTaskDelay(pdMS_TO_TICKS(pxConfig->delayMs));
     }
 }
 
 /*-----------------------------------------------------------*/
 
-static void readerTask( void *pvParameters )
+static void readerTask(void *pvParameters)
 {
     struct MsgObj xReadMsgObj;
     UBaseType_t uxWaiting;
-    ( void ) pvParameters;
+    (void)pvParameters;
 
-    for( ;; )
+    for (;;)
     {
-        if( xQueueReceive( xQueue,
-                           ( void * ) &xReadMsgObj,
-                           mainQUEUE_RECEIVE_TICKS_TO_WAIT ) == pdPASS )
+        if (xQueueReceive(xQueue,
+                          (void *)&xReadMsgObj,
+                          mainQUEUE_RECEIVE_TICKS_TO_WAIT) == pdPASS)
         {
-            uxWaiting = uxQueueMessagesWaiting( xQueue );
+            uxWaiting = uxQueueMessagesWaiting(xQueue);
 
-            UARTprintf( "RX xQueue id=0x%02x val=%u seq=%u tick=%u | queue=%u/%u\r\n",
-                        ( unsigned int ) xReadMsgObj.id,
-                        ( unsigned int ) xReadMsgObj.val,
-                        ( unsigned int ) xReadMsgObj.seq,
-                        ( unsigned int ) xReadMsgObj.tick,
-                        ( unsigned int ) uxWaiting,
-                        ( unsigned int ) mainQUEUE_LENGTH );
+            // if (xReadMsgObj.id == 0xA0U)
+            // {
+
+                UARTprintf("RX xQueue id=0x%02x val=%u seq=%u tick=%u | queue=%u/%u\r\n",
+                           (unsigned int)xReadMsgObj.id,
+                           (unsigned int)xReadMsgObj.val,
+                           (unsigned int)xReadMsgObj.seq,
+                           (unsigned int)xReadMsgObj.tick,
+                           (unsigned int)uxWaiting,
+                           (unsigned int)mainQUEUE_LENGTH);
+            // }
         }
 
-        if( mainRECEIVER_DELAY_MS > 0U )
+        if (mainRECEIVER_DELAY_MS > 0U)
         {
-            vTaskDelay( pdMS_TO_TICKS( mainRECEIVER_DELAY_MS ) );
+            vTaskDelay(pdMS_TO_TICKS(mainRECEIVER_DELAY_MS));
         }
     }
 }
 
 /*-----------------------------------------------------------*/
 
-static void pointerReaderTask( void *pvParameters )
+static void pointerReaderTask(void *pvParameters)
 {
     struct MsgObj *ptrReadMsgObj;
 
-    ( void ) pvParameters;
+    (void)pvParameters;
 
-    for( ;; )
+    for (;;)
     {
         ptrReadMsgObj = NULL;
 
-        if( xQueueReceive( xPointerQueue,
-                           ( void * ) &ptrReadMsgObj,
-                           mainQUEUE_RECEIVE_TICKS_TO_WAIT ) == pdPASS )
+        if (xQueueReceive(xPointerQueue,
+                          (void *)&ptrReadMsgObj,
+                          mainQUEUE_RECEIVE_TICKS_TO_WAIT) == pdPASS)
         {
-            if( ptrReadMsgObj != NULL )
+            if (ptrReadMsgObj != NULL)
             {
-                UARTprintf( "RX xPointerQueue id=0x%02x val=%u seq=%u tick=%u\r\n",
-                            ( unsigned int ) ptrReadMsgObj->id,
-                            ( unsigned int ) ptrReadMsgObj->val,
-                            ( unsigned int ) ptrReadMsgObj->seq,
-                            ( unsigned int ) ptrReadMsgObj->tick );
+                UARTprintf("RX xPointerQueue id=0x%02x val=%u seq=%u tick=%u\r\n",
+                           (unsigned int)ptrReadMsgObj->id,
+                           (unsigned int)ptrReadMsgObj->val,
+                           (unsigned int)ptrReadMsgObj->seq,
+                           (unsigned int)ptrReadMsgObj->tick);
             }
         }
     }
@@ -237,6 +240,6 @@ static void pointerReaderTask( void *pvParameters )
 
 /*-----------------------------------------------------------*/
 
-void vApplicationTickHook( void )
+void vApplicationTickHook(void)
 {
 }

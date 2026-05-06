@@ -65,6 +65,12 @@
 #define configUSE_RECURSIVE_MUTEXES         1
 #define configCHECK_FOR_STACK_OVERFLOW      2
 
+/* Software timer definitions. */
+#define configUSE_TIMERS    1
+#define configTIMER_TASK_PRIORITY       ( tskIDLE_PRIORITY + 3 )
+#define configTIMER_QUEUE_LENGTH        10
+#define configTIMER_TASK_STACK_DEPTH    256
+
 //#define configMAX_PRIORITIES                ( ( unsigned portBASE_TYPE ) 16 )
 #define configMAX_PRIORITIES ( 16 )
 #define configMAX_CO_ROUTINE_PRIORITIES     ( 2 )

@@ -76,6 +76,9 @@
 #include "driverlib/uart.h"
 #include "drivers/rtos_hw_drivers.h"
 #include "utils/uartstdio.h"
+
+/*File Inclusions*/
+#include "sensor_task.h"
 /*-----------------------------------------------------------*/
 
 /* The system clock frequency. */
@@ -91,16 +94,20 @@ static void prvConfigureUART(void);
 /* API to start the queue task. */
 extern void vQueueTask( void );
 
-extern void vcreateQueueTasks( void );
+extern void vCreateSensorTasks( void );
+extern void vDisplayDemoTask(void);
 /*-----------------------------------------------------------*/
 
 int main( void )
 {
     /* Prepare the hardware to run this demo. */
     prvSetupHardware();
-
-    /* create the queue task. */
-    vcreateQueueTasks();
+    
+    /* Start the display tasks. */
+    vDisplayDemoTask(); 
+    
+    /* create the sensor tasks. */
+    vCreateSensorTasks();
 
     /* Start the tasks running. */
     vTaskStartScheduler();
