@@ -74,7 +74,7 @@ static float prvMovingAverage(float fNewValue)
 static void vSampleTimerCallback(TimerHandle_t xTimer)
 {
     (void)xTimer;
-    vTaskNotifyGiveFromISR(xSensorTaskHandle, NULL);
+    xTaskNotifyGive(xSensorTaskHandle);
 }
 
 /*-----------------------------------------------------------*/
@@ -113,6 +113,12 @@ static void vSensorTask(void *pvParameters)
 
             sensorOpt3001Convert(ui16RawData, &fRawLux);
             fFilteredLux = prvMovingAverage(fRawLux);
+
+            UARTprintf("%d.%02d,%d.%02d\n",
+            (int)fRawLux,
+            (int)(fRawLux * 100.0f) % 100,
+            (int)fFilteredLux,
+            (int)(fFilteredLux * 100.0f) % 100);
 
             /* Build message */
             xMsg.ui32Sequence  = ui32SequenceNum++;
@@ -162,28 +168,28 @@ static void vSensorTask(void *pvParameters)
 /*-----------------------------------------------------------*/
 /* Display task */
 
-static void vDisplayTask(void *pvParameters)
-{
-    SensorMsg_t xMsg;
-    (void)pvParameters;
+// static void vDisplayTask(void *pvParameters)
+// {
+//     SensorMsg_t xMsg;
+//     (void)pvParameters;
 
-    for (;;)
-    {
-        /* Block until a message arrives */
-        if (xQueueReceive(xSensorQueue, &xMsg, portMAX_DELAY) == pdPASS)
-        {
+//     for (;;)
+//     {
+//         /* Block until a message arrives */
+//         if (xQueueReceive(xSensorQueue, &xMsg, portMAX_DELAY) == pdPASS)
+//         {
             
-            UARTprintf("%d.%02d,%d.%02d\n",
-                (int)xMsg.fRawLux,
-                (int)(xMsg.fRawLux * 100.0f) % 100,
-                (int)xMsg.fFilteredLux,
-                (int)(xMsg.fFilteredLux * 100.0f) % 100);
+//             UARTprintf("%d.%02d,%d.%02d\n",
+//                 (int)xMsg.fRawLux,
+//                 (int)(xMsg.fRawLux * 100.0f) % 100,
+//                 (int)xMsg.fFilteredLux,
+//                 (int)(xMsg.fFilteredLux * 100.0f) % 100);
 
 
-             vTaskDelay(pdMS_TO_TICKS(350));                          
-        }
-    }
-}
+//              vTaskDelay(pdMS_TO_TICKS(350));                          
+//         }
+//     }
+// }
 
 /*-----------------------------------------------------------*/
 /* Create everything */
@@ -220,12 +226,12 @@ void vCreateSensorTasks(void)
                 &xSensorTaskHandle);   /* store handle for timer callback */
 
     /* Create display task at lower priority */
-    xTaskCreate(vDisplayTask,
-                "DisplayTask",
-                512,
-                NULL,
-                tskIDLE_PRIORITY + 1,
-                NULL);
+    // xTaskCreate(vDisplayTask,
+    //             "DisplayTask",
+    //             512,
+    //             NULL,
+    //             tskIDLE_PRIORITY + 1,
+    //             NULL);
 
     /* Create 5Hz repeating software timer */
     xSampleTimer = xTimerCreate(

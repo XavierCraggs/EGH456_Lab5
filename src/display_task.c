@@ -69,34 +69,43 @@ static uint32_t ui32BufCount = 0;
 static PlotMode_t ePlotMode   = PLOT_FILTERED_ONLY;
 static bool bDisplayHold      = false;
 
+/* Button press flags — set by ISR, processed by task */
+static volatile uint32_t ui32ButtonFlags = 0;
+#define BTN_FLAG_TOGGLE_PLOT  (1UL << 0)
+#define BTN_FLAG_DISPLAY_HOLD (1UL << 1)
+
+/* Button debounce timer */
+static TickType_t xLastButtonTime = 0;
+#define BTN_DEBOUNCE_MS 200
+
 /*-----------------------------------------------------------*/
 /* Button ISR — Port J */
 
 void GPIOJIntHandler(void)
 {
     uint32_t ui32Status;
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    TickType_t xCurrentTime = xTaskGetTickCountFromISR();
 
     ui32Status = GPIOIntStatus(GPIO_PORTJ_BASE, true);
     GPIOIntClear(GPIO_PORTJ_BASE, ui32Status);
 
+    /* Simple debounce check */
+    if ((xCurrentTime - xLastButtonTime) < pdMS_TO_TICKS(BTN_DEBOUNCE_MS))
+    {
+        return;
+    }
+    xLastButtonTime = xCurrentTime;
+
+    /* Set volatile flags for task to process */
     if (ui32Status & USR_SW1)
     {
-        /* SW1 — toggle plot mode */
-        xEventGroupSetBitsFromISR(xSensorEventGroup,
-                                  EVENT_BTN_TOGGLE_PLOT,
-                                  &xHigherPriorityTaskWoken);
+        ui32ButtonFlags |= BTN_FLAG_TOGGLE_PLOT;
     }
 
     if (ui32Status & USR_SW2)
     {
-        /* SW2 — toggle display hold */
-        xEventGroupSetBitsFromISR(xSensorEventGroup,
-                                  EVENT_DISPLAY_HOLD,
-                                  &xHigherPriorityTaskWoken);
+        ui32ButtonFlags |= BTN_FLAG_DISPLAY_HOLD;
     }
-
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 /*-----------------------------------------------------------*/
@@ -317,16 +326,45 @@ static void vDisplayTask(void *pvParameters)
         }
 
         /*--------------------------------------------------
-         * 2. Update graph only if not held
+         * 2. Process button flags (set by ISR)
          *--------------------------------------------------*/
+        if (ui32ButtonFlags & BTN_FLAG_TOGGLE_PLOT)
+        {
+            ePlotMode = (ePlotMode == PLOT_FILTERED_ONLY)
+                        ? PLOT_RAW_AND_FILTERED
+                        : PLOT_FILTERED_ONLY;
+            ui32ButtonFlags &= ~BTN_FLAG_TOGGLE_PLOT;
+            xEventGroupSetBits(xSensorEventGroup, EVENT_BTN_TOGGLE_PLOT);
+        }
+
+        if (ui32ButtonFlags & BTN_FLAG_DISPLAY_HOLD)
+        {
+            bDisplayHold = !bDisplayHold;
+            ui32ButtonFlags &= ~BTN_FLAG_DISPLAY_HOLD;
+            xEventGroupSetBits(xSensorEventGroup, EVENT_DISPLAY_HOLD);
+        }
+
+        /*--------------------------------------------------
+         * 3. Update graph only if not held
+         *--------------------------------------------------*/
+        static bool bWasHeld = false;
+
         if (!bDisplayHold)
         {
             prvRedrawGraph();
             prvDrawGraphBorder();
+            bWasHeld = false;
+        }
+        else if (!bWasHeld)
+        {
+            /* First frame of hold — draw once to freeze current state */
+            prvRedrawGraph();
+            prvDrawGraphBorder();
+            bWasHeld = true;
         }
 
         /*--------------------------------------------------
-         * 3. Check event group — non-blocking (0 timeout)
+         * 4. Check event group — non-blocking (0 timeout)
          *--------------------------------------------------*/
         xBits = xEventGroupWaitBits(
                     xSensorEventGroup,
@@ -337,30 +375,24 @@ static void vDisplayTask(void *pvParameters)
                     pdFALSE,      /* wait for ANY bit */
                     0);           /* 0 timeout — non-blocking */
 
-        /* Handle plot toggle */
-        if (xBits & EVENT_BTN_TOGGLE_PLOT)
-        {
-            ePlotMode = (ePlotMode == PLOT_FILTERED_ONLY)
-                        ? PLOT_RAW_AND_FILTERED
-                        : PLOT_FILTERED_ONLY;
-            xEventGroupClearBits(xSensorEventGroup, EVENT_BTN_TOGGLE_PLOT);
-        }
-
-        /* Handle display hold toggle */
-        if (xBits & EVENT_DISPLAY_HOLD)
-        {
-            bDisplayHold = !bDisplayHold;
-            xEventGroupClearBits(xSensorEventGroup, EVENT_DISPLAY_HOLD);
-        }
+        /* Clear button bits after handling (they were set by task above) */
+        xEventGroupClearBits(xSensorEventGroup,
+                             EVENT_BTN_TOGGLE_PLOT | EVENT_DISPLAY_HOLD);
 
         /* Clear transient bits after handling */
         xEventGroupClearBits(xSensorEventGroup,
                              EVENT_SENSOR_MISSED | EVENT_QUEUE_FULL);
 
         /*--------------------------------------------------
-         * 4. Update status bar
+         * 5. Update status bar
          *--------------------------------------------------*/
         prvUpdateStatus(xBits);
+
+        /* Debug heartbeat */
+        static uint32_t ui32Heartbeat = 0;
+        if (++ui32Heartbeat % 20 == 0) {  // Every ~1 second
+            UARTprintf("Display task running...\n");
+        }
 
         /* 50ms gives ~20 display updates/sec — plenty for 5Hz sensor */
         vTaskDelay(pdMS_TO_TICKS(50));

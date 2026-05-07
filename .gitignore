@@ -6,6 +6,7 @@
 # VS Code local settings
 .vscode/
 !.vscode/extensions.json
+.claude/
 
 # Build artefacts
 *.elf
