@@ -323,10 +323,12 @@ static void vDisplayTask(void *pvParameters)
             fFilteredBuf[ui32BufIndex] = xMsg.fFilteredLux;
             ui32BufIndex = (ui32BufIndex + 1) % GRAPH_POINTS;
             if (ui32BufCount < GRAPH_POINTS) ui32BufCount++;
+
+            // vTaskDelay(pdMS_TO_TICKS(350));
         }
 
         /*--------------------------------------------------
-         * 2. Process button flags (set by ISR)
+         * 2. Process button flags 
          *--------------------------------------------------*/
         if (ui32ButtonFlags & BTN_FLAG_TOGGLE_PLOT)
         {
