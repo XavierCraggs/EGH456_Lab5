@@ -40,8 +40,12 @@
 /* Max lux for scaling — adjust to your environment */
 #define LUX_DISPLAY_MAX  1000.0f
 
-/* Number of x-pixels = number of data points we store */
-#define GRAPH_POINTS    GRAPH_WIDTH
+/* Graph time window */
+#define GRAPH_PERIOD_SECONDS   20
+#define SENSOR_SAMPLE_RATE_HZ  5
+
+/* Number of data points to store for the 20s window */
+#define GRAPH_POINTS    (GRAPH_PERIOD_SECONDS * SENSOR_SAMPLE_RATE_HZ)
 
 /*-----------------------------------------------------------*/
 /* Plot mode */
@@ -63,8 +67,14 @@ static tContext sContext;
 /* Circular buffers for graph data */
 static float fRawBuf[GRAPH_POINTS]      = {0};
 static float fFilteredBuf[GRAPH_POINTS] = {0};
+static float fFrozenRawBuf[GRAPH_POINTS] = {0};
+static float fFrozenFilteredBuf[GRAPH_POINTS] = {0};
 static uint32_t ui32BufIndex = 0;
 static uint32_t ui32BufCount = 0;
+static uint32_t ui32FrozenBufIndex = 0;
+static uint32_t ui32FrozenBufCount = 0;
+static bool bFrozenGraphValid = false;
+static bool bGraphNeedsRedraw = true;
 
 static PlotMode_t ePlotMode   = PLOT_FILTERED_ONLY;
 static bool bDisplayHold      = false;
@@ -174,7 +184,26 @@ static void prvRedrawGraph(void)
     int16_t i16X, i16Y, i16YPrev;
     int16_t i16YFilt, i16YFiltPrev;
     uint32_t ui32Count;
+    uint32_t ui32Index;
+    float *pfRawBuf;
+    float *pfFilteredBuf;
     tRectangle sRect;
+
+    /* Use frozen data while display is held */
+    if (bDisplayHold && bFrozenGraphValid)
+    {
+        pfRawBuf = fFrozenRawBuf;
+        pfFilteredBuf = fFrozenFilteredBuf;
+        ui32Index = ui32FrozenBufIndex;
+        ui32Count = (ui32FrozenBufCount < GRAPH_POINTS) ? ui32FrozenBufCount : GRAPH_POINTS;
+    }
+    else
+    {
+        pfRawBuf = fRawBuf;
+        pfFilteredBuf = fFilteredBuf;
+        ui32Index = ui32BufIndex;
+        ui32Count = (ui32BufCount < GRAPH_POINTS) ? ui32BufCount : GRAPH_POINTS;
+    }
 
     /* Clear graph area */
     sRect.i16XMin = GRAPH_X_MIN + 1;
@@ -184,21 +213,20 @@ static void prvRedrawGraph(void)
     GrContextForegroundSet(&sContext, ClrBlack);
     GrRectFill(&sContext, &sRect);
 
-    ui32Count = (ui32BufCount < GRAPH_POINTS) ? ui32BufCount : GRAPH_POINTS;
     if (ui32Count < 2) return;
 
     /* Find start index in circular buffer */
-    ui32Start = (ui32BufIndex + GRAPH_POINTS - ui32Count) % GRAPH_POINTS;
+    ui32Start = (ui32Index + GRAPH_POINTS - ui32Count) % GRAPH_POINTS;
 
     /* Draw filtered (green) */
-    GrContextForegroundSet(&sContext, ClrGreen);
-    i16YFiltPrev = prvLuxToY(fFilteredBuf[ui32Start]);
+    GrContextForegroundSet(&sContext, ClrTurquoise);
+    i16YFiltPrev = prvLuxToY(pfFilteredBuf[ui32Start]);
 
     for (i = 1; i < ui32Count; i++)
     {
         uint32_t idx = (ui32Start + i) % GRAPH_POINTS;
         i16X = (int16_t)(GRAPH_X_MIN + (i * GRAPH_WIDTH / ui32Count));
-        i16YFilt = prvLuxToY(fFilteredBuf[idx]);
+        i16YFilt = prvLuxToY(pfFilteredBuf[idx]);
 
         GrLineDraw(&sContext,
                    i16X - (int16_t)(GRAPH_WIDTH / ui32Count),
@@ -212,13 +240,13 @@ static void prvRedrawGraph(void)
     if (ePlotMode == PLOT_RAW_AND_FILTERED)
     {
         GrContextForegroundSet(&sContext, ClrYellow);
-        i16YPrev = prvLuxToY(fRawBuf[ui32Start]);
+        i16YPrev = prvLuxToY(pfRawBuf[ui32Start]);
 
         for (i = 1; i < ui32Count; i++)
         {
             uint32_t idx = (ui32Start + i) % GRAPH_POINTS;
             i16X = (int16_t)(GRAPH_X_MIN + (i * GRAPH_WIDTH / ui32Count));
-            i16Y = prvLuxToY(fRawBuf[idx]);
+            i16Y = prvLuxToY(pfRawBuf[idx]);
 
             GrLineDraw(&sContext,
                        i16X - (int16_t)(GRAPH_WIDTH / ui32Count),
@@ -310,12 +338,15 @@ static void vDisplayTask(void *pvParameters)
     GrRectFill(&sContext, &sRect);
 
     prvDrawGraphBorder();
+    prvRedrawGraph();
 
     for (;;)
     {
         /*--------------------------------------------------
          * 1. Drain the sensor queue
          *--------------------------------------------------*/
+        bool bNewGraphData = false;
+
         while (xQueueReceive(xSensorQueue, &xMsg, 0) == pdPASS)
         {
             /* Always store data in buffer even when held */
@@ -323,6 +354,7 @@ static void vDisplayTask(void *pvParameters)
             fFilteredBuf[ui32BufIndex] = xMsg.fFilteredLux;
             ui32BufIndex = (ui32BufIndex + 1) % GRAPH_POINTS;
             if (ui32BufCount < GRAPH_POINTS) ui32BufCount++;
+            bNewGraphData = true;
 
             // vTaskDelay(pdMS_TO_TICKS(350));
         }
@@ -337,32 +369,38 @@ static void vDisplayTask(void *pvParameters)
                         : PLOT_FILTERED_ONLY;
             ui32ButtonFlags &= ~BTN_FLAG_TOGGLE_PLOT;
             xEventGroupSetBits(xSensorEventGroup, EVENT_BTN_TOGGLE_PLOT);
+            bGraphNeedsRedraw = true;
         }
 
         if (ui32ButtonFlags & BTN_FLAG_DISPLAY_HOLD)
         {
             bDisplayHold = !bDisplayHold;
+            if (bDisplayHold)
+            {
+                memcpy(fFrozenRawBuf, fRawBuf, sizeof(fRawBuf));
+                memcpy(fFrozenFilteredBuf, fFilteredBuf, sizeof(fFilteredBuf));
+                ui32FrozenBufIndex = ui32BufIndex;
+                ui32FrozenBufCount = ui32BufCount;
+                bFrozenGraphValid = true;
+            }
             ui32ButtonFlags &= ~BTN_FLAG_DISPLAY_HOLD;
             xEventGroupSetBits(xSensorEventGroup, EVENT_DISPLAY_HOLD);
+            bGraphNeedsRedraw = true;
+        }
+
+        if (!bDisplayHold && bNewGraphData)
+        {
+            bGraphNeedsRedraw = true;
         }
 
         /*--------------------------------------------------
-         * 3. Update graph only if not held
+         * 3. Update graph
          *--------------------------------------------------*/
-        static bool bWasHeld = false;
-
-        if (!bDisplayHold)
+        if (bGraphNeedsRedraw)
         {
-            prvRedrawGraph();
             prvDrawGraphBorder();
-            bWasHeld = false;
-        }
-        else if (!bWasHeld)
-        {
-            /* First frame of hold — draw once to freeze current state */
             prvRedrawGraph();
-            prvDrawGraphBorder();
-            bWasHeld = true;
+            bGraphNeedsRedraw = false;
         }
 
         /*--------------------------------------------------
